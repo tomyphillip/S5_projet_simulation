@@ -18,7 +18,7 @@ class sonar(blenderObject):
     angle = 30 # angle en radians
     precision = 0.1
 
-    def Check(self):
+    def Check(self, object_List):
         #remplir une matrice de point depuis l'origine
 
         largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2)*100)
@@ -35,6 +35,8 @@ class sonar(blenderObject):
                 step_y = np.int16(np.cos(angleRad)*step)
                 self.onde[step_x][step_y] = 1
 
+        for obj in object_List:
+            obj.x
         #originbnp.array
 
 
@@ -47,10 +49,10 @@ class sonar(blenderObject):
 
 
 
-
-obj = blenderObject(4, 1, 0)
-obj = blenderObject(4, -1, 0)
-obj = blenderObject(6, 0, 0)
+object_List = []
+object_List.append(blenderObject(4, 1, 0))
+object_List.append(blenderObject(4, -1, 0))
+object_List.append(blenderObject(6, 0, 0))
 capteur_sonar = sonar(0,0,0)
-capteur_sonar.Check()
+capteur_sonar.Check(object_List)
 capteur_sonar.show()
