@@ -10,9 +10,9 @@ class blenderObject:
     scale = 100
     radius = 2
     def __init__(self, x, y, z):
-        self.x = x*scale
-        self.y = y*100
-        self.z = z*100
+        self.x = x*self.scale
+        self.y = y*self.scale
+        self.z = z*self.scale
 
     def show(self, fig, ax):
         ax.plot(self.x, self.y, "xr")
@@ -20,16 +20,17 @@ class blenderObject:
 
 
 class sonar(blenderObject): 
-    max_range = 450 #centimètres
-    angle = 30 # angle en degrées
-    precision = 10
 
     def __init__(self, x, y, z):
         super().__init__(x,y,z)
 
+        self.max_range = 4.5*self.scale #mètre
+        self.angle = 30 # angle en degrées
+        self.precision = 0.1*self.scale
+
         #vision du sonar
         largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2))
-        milieu = np.int16((largeur)/2)+4 #le +4 parce que
+        milieu = np.int16((largeur)/2)+np.int16(0.04*self.scale) #le +0.04 pour être au milieu
         longueur = np.int16(self.max_range)
 
         self.onde = np.zeros((largeur, longueur))
@@ -59,8 +60,8 @@ class sonar(blenderObject):
                         #sleep pour simuler le temps réel
                         length = (index[0]**2 + index[1]**2)**0.5 #pythagore
                         C = 333.34 #m/s
-                        time.sleep(2*(length/100)/C)
-                        return length
+                        time.sleep(2*(length/self.scale)/C)
+                        return length/self.scale
         return -1 #dans la librairie, -1 est retourné s'il y a rien
 
     def show(self, fig, ax):
@@ -80,7 +81,7 @@ fig, ax = plt.subplots()
 capteur_sonar = sonar(0,0,0)
 L = capteur_sonar.Check(objlist)
 
-print(f"obstacle détecté à ${L/100}m")
+print(f"obstacle détecté à ${L}m")
 
 capteur_sonar.show(fig, ax)
 
