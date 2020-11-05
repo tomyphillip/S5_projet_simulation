@@ -2,31 +2,48 @@ import numpy as np
 import matplotlib.image as mpimg
 import matplotlib.pyplot as plt
 import time
+import bpy
+import os
+from pathlib import Path
 
-class blenderObject:
+class blenderObject():
     x = 0
     y = 0
     z = 0
     scale = 100
     radius = 2
-    def __init__(self, x, y, z):
+    name = "undefined" #name of the blender object
+    running = True
+
+    def __init__(self, x, y, z, name="undefined"):
         self.x = x*self.scale
         self.y = y*self.scale
         self.z = z*self.scale
+        self.name = name
+
+        if not self.name in bpy.data.objects:
+            path = Path(os.getcwd()) / "blender" / f"{self.name}.dae"
+            bpy.ops.wm.collada_import(filepath=str(path), import_units=False, keep_bind_info=False)
+
+        self.blenderObj = bpy.data.objects[self.name]
+
+    def showBlender(self):
+        self.blenderObj.location = (self.x/self.scale, self.y/self.scale, self.z/self.scale)
 
     def show(self, fig, ax):
         ax.plot(self.x, self.y, "xr")
 
 
 
+
 class sonar(blenderObject): 
 
-    def __init__(self, x, y, z):
-        super().__init__(x,y,z)
+    def __init__(self, x, y, z, name):
+        super().__init__(x,y,z, name)
 
         self.max_range = 4.5*self.scale #mètre
         self.angle = 30 # angle en degrées
-        self.precision = 0.1*self.scale
+        self.precision = 1*self.scale
 
         #vision du sonar
         largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2))
@@ -64,25 +81,31 @@ class sonar(blenderObject):
                         return length/self.scale
         return -1 #dans la librairie, -1 est retourné s'il y a rien
 
-    def show(self, fig, ax):
+    def avance(self):
+        self.showBlender()
+        self.y += 1*self.scale
         
+
+    def show(self, fig, ax):
         ax.set_title('sonar')
         ax.imshow(self.onde)
 
-
-
+#load blender scene
+scene = bpy.context.scene
 
 objlist = []
-objlist.append(blenderObject(4, 0, 0))
-objlist.append(blenderObject(4, -1, 0))
-objlist.append(blenderObject(6, 0, 0))
+objlist.append(blenderObject(0, 4, 0))
+
+capteur_sonar = sonar(0, 0, 0, "vehicule")
+
+for i in range(0, 10):
+    L = capteur_sonar.Check(objlist)
+    print(f"obstacle detecte a {L}m")
+    capteur_sonar.avance()
+
+capteur_sonar.x = 0
 
 fig, ax = plt.subplots()
-capteur_sonar = sonar(0,0,0)
-L = capteur_sonar.Check(objlist)
-
-print(f"obstacle détecté à ${L}m")
-
 capteur_sonar.show(fig, ax)
 
 for obj in objlist:
