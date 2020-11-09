@@ -31,32 +31,65 @@ class blenderObject():
             self.blenderObj.keyframe_insert(data_path="location", index=-1)
             self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
     
-    def mouvementLocal(self, positionArray):
+    def mouvementLocal(self, deltaPosition):
         if self.scene is not None:
-            for position in positionArray:
-                self.frameNb += 1
-                self.scene.frame_set(self.frameNb)
-                self.blenderObj.location = tuple(position+(self.position/self.scale))
-                self.blenderObj.keyframe_insert(data_path="location", index=-1)
-                self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
-            
-    def showBlender(self):
-        self.blenderObj.location = tuple(self.position/self.scale)
-
+            self.frameNb += 1
+            self.scene.frame_set(self.frameNb)
+            self.blenderObj.location = tuple(deltaPosition+(self.position/self.scale))
+            self.blenderObj.keyframe_insert(data_path="location", index=-1)
+            self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
+                
+    
     def show(self, fig, ax):
         ax.plot(self.position[0], self.position[1], "xr")
 
 
+class vehicule(blenderObject):
 
+    def __init__(self, x,y,z,scene):
+        super().__init__(x,y,z, "vehicule", scene)
+        self.bille = bille(x-0.5, y, z, scene)
+        self.sonar = sonar(x+0.5, y, z, scene)
+        self.suiveurligne = suiveurligne(x+0.5, y, z, scene)
+        #ajout du sonar à l'avant
+    
+    def mouvementLocal(self, deltaPosition):
+        super().mouvementLocal(deltaPosition)
+        self.suiveurligne.mouvementLocal(deltaPosition)
+        self.sonar.mouvementLocal(deltaPosition)
+
+        #déterminer accélération x et y pis shooter ça à bille
+        #je pense que deltaposition serait une accélération en fait
+        bille.bougeBille(self, deltaPosition)
+        
+
+class bille(blenderObject):
+    def __init__(self, x, y, z, scene):
+        super().__init__(x, y, z, "bille", scene)
+        #qu'est-ce qu'on a besoin de savoir? Accélération en x et y? angle en z? faire le z ou pas?
+
+    def bougeBille(self, deltaPosition):
+        #offset x à calculer avec la formule d'inertie de la bille
+        offset_x = 0
+        #offset y
+        offset_y = 0
+
+        positionBille = np.array([deltaPosition[0]+offset_x, deltaPosition[1]+offset_y, deltaPosition[2]])
+        self.mouvementLocal(positionBille)
+
+        raise Exception("Pas encore codé")
+
+class suiveurligne(blenderObject):
+    def __init__(self, x, y, z, scene):
+        super().__init__(x, y, z, "undefined", scene)
 
 class sonar(blenderObject): 
-
-    def __init__(self, x, y, z, name, scene):
+    def __init__(self, x, y, z, scene):
         self.scale = 100
-        super().__init__(x,y,z, name, scene)
+        super().__init__(x,y,z, "undefined", scene)
         self.max_range = 4.5*self.scale #mètre
         self.angle = 30 # angle en degrées
-        self.precision = 1*self.scale
+        self.precision = 0.01*self.scale
 
         #vision du sonar
         largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2))
@@ -108,7 +141,7 @@ if scene is not None:
 objlist = []
 objlist.append(blenderObject(0, 4, 0, scene=scene))
 
-capteur_sonar = sonar(0, 0, 0, "vehicule", scene)
+vehicule = vehicule(0, 0, 0, scene)
 
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
@@ -118,12 +151,12 @@ position = np.array([np.array([0.0]*3)]*100)
 for x in np.linspace(0.01, 1, 100):
     position[int(x*100)-1] = np.array([x, -x, x*2])
 
-capteur_sonar.mouvementLocal(position)
+vehicule.mouvementLocal(position)
 
 
 if scene is None:
     fig, ax = plt.subplots()
-    capteur_sonar.show(fig, ax)
+    vehicule.show(fig, ax)
 
     for obj in objlist:
         obj.show(fig, ax)
