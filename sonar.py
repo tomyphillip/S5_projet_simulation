@@ -40,12 +40,6 @@ class blenderObject():
                 self.blenderObj.keyframe_insert(data_path="location", index=-1)
                 self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
             
-
-    def avance(self, vitesse, deltaPosition):
-        number_of_frame += 100/(len(position)-1)
-        self.scene_position.append(tuple(self.position+deltaPosition))
-
-
     def showBlender(self):
         self.blenderObj.location = tuple(self.position/self.scale)
 
