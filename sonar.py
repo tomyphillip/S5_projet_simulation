@@ -4,7 +4,9 @@ import matplotlib.pyplot as plt
 import time
 import bpy
 import os
+import time
 from pathlib import Path
+from threading import Thread
 
 class blenderObject():
     scale = 1
@@ -14,7 +16,8 @@ class blenderObject():
     framerate = 100 #besoin de savoir ça?
 
     def __init__(self, x, y, z, name="undefined", scene=None):
-        self.position = np.array([x*self.scale, y*self.scale, z*self.scale])
+        self.position = np.array([x*self.scale, y*self.scale, z*self.scale], dtype=np.float)
+        self.rotation = np.array([0, 0, 0])
         self.name = name
         self.scene = scene
         if scene is not None:
@@ -35,22 +38,23 @@ class blenderObject():
         if self.scene is not None:
             self.frameNb += 1
             self.scene.frame_set(self.frameNb)
-            self.blenderObj.location = tuple(deltaPosition+(self.position/self.scale))
+            self.position += deltaPosition
+            self.blenderObj.location = tuple(self.position/self.scale)
             self.blenderObj.keyframe_insert(data_path="location", index=-1)
             self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
-                
-    
+            
+
     def show(self, fig, ax):
         ax.plot(self.position[0], self.position[1], "xr")
 
 
-class vehicule(blenderObject):
 
+class vehicule(blenderObject):
     def __init__(self, x,y,z,scene):
         super().__init__(x,y,z, "vehicule", scene)
-        self.bille = bille(x-0.5, y, z, scene)
-        self.sonar = sonar(x+0.5, y, z, scene)
-        self.suiveurligne = suiveurligne(x+0.5, y, z, scene)
+        self.bille = bille(x, y-0.08, z+0.015, scene)
+        self.sonar = sonar(x, y-0.14, z, None)
+        self.suiveurligne = suiveurligne(x+0.5, y, z, None)
         #ajout du sonar à l'avant
     
     def mouvementLocal(self, deltaPosition):
@@ -60,7 +64,7 @@ class vehicule(blenderObject):
 
         #déterminer accélération x et y pis shooter ça à bille
         #je pense que deltaposition serait une accélération en fait
-        bille.bougeBille(self, deltaPosition)
+        self.bille.bougeBille(deltaPosition)
         
 
 class bille(blenderObject):
@@ -76,8 +80,6 @@ class bille(blenderObject):
 
         positionBille = np.array([deltaPosition[0]+offset_x, deltaPosition[1]+offset_y, deltaPosition[2]])
         self.mouvementLocal(positionBille)
-
-        raise Exception("Pas encore codé")
 
 class suiveurligne(blenderObject):
     def __init__(self, x, y, z, scene):
@@ -132,33 +134,112 @@ class sonar(blenderObject):
         ax.imshow(self.onde)
 
 
+#gere la connection blender au script
 
-#load blender scene
-scene = bpy.context.scene
-if scene is not None:
-    scene.render.fps = 100
+class blenderManager(Thread):
+    _foward_speed = 0
+    _rotationServo = 0
+    _distanceSonar = 0
 
-objlist = []
-objlist.append(blenderObject(0, 4, 0, scene=scene))
+    #constant
+    _circonference_roue = 0.04*2*np.pi
+    framerate = 100
+    _step = 1/framerate #100 serait 100fps, donc 1 seconde.
+    _rpsMax = 4 # rotation par seconde à confirmer
 
-vehicule = vehicule(0, 0, 0, scene)
+    #liste d'état
+    _avance = False
+    _stop = True
+    _recule = False
+
+
+    #l'argument secondes est la durée de la simulation
+    def __init__(self, secondes):
+        super().__init__()
+        self._tempsDeSimulation = secondes
+        #delete tout les trucs
+        bpy.ops.object.select_all(action='SELECT')
+        bpy.ops.object.delete(use_global=False, confirm=False)
+        #load blender scene
+        scene = bpy.context.scene
+        if scene is not None:
+            scene.render.fps = self.framerate
+        self.vehicule = vehicule(0, 0, 0, scene)
+        bpy.context.scene.frame_end = int(secondes*self.framerate)
+
+
+    def run(self):
+        nombreStepAvantLaFin = self.framerate*self._tempsDeSimulation
+        nombreStep = 0
+    
+        while(nombreStep < nombreStepAvantLaFin):
+            start = time.time()
+            if self._avance:
+                distance = (self._foward_speed)*self._step*self._circonference_roue*self._rpsMax
+            elif self._recule:
+                distance = -(self._foward_speed)*self._step*self._circonference_roue*self._rpsMax
+            elif self._stop:
+                distance = 0
+            else:
+                raise Exception("Aucun mode active pour la classe blenderManager")
+            
+
+
+            #pas de rotation pour le moment à prendre en compte, donc je vais juste mettre la vitesse dans le y
+            position = np.array([0, distance, 0])
+            self.vehicule.mouvementLocal(position)
+
+            nombreStep += 1
+            tempsEcoule = time.time() - start
+            if(tempsEcoule > 1/self.framerate):
+                #c'est peut-être juste un breakpoint aussi, donc pas d'exception on continue
+                print("La simulation n'est pas assez performante, risque d'erreur")
+                print(f"etape {nombreStep}")
+            else:
+                time.sleep((1/self.framerate)-tempsEcoule)
+
+            #maintenant qu'on a la distance, le convertir en x, y et z
+
+
+
+    def forward(self):
+        self._avance = True
+        self._stop = False
+        self._recule = False
+    
+    def backward(self):
+        self._avance = False
+        self._stop = False
+        self._recule = True
+
+    def stop(self):
+        self._avance = False
+        self._stop = True
+        self._recule = False
+
+    #vitesse de 0 à 100
+    def set_speed(self, speed):
+        if(speed < 0 or speed > 100):
+            raise Exception(f"Vitesse invalide dans set_speed({speed})")
+        self._foward_speed = speed/100
+
 
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
 
-#capteur_sonar.avance(1, (10,2,0))
-position = np.array([np.array([0.0]*3)]*100)
-for x in np.linspace(0.01, 1, 100):
-    position[int(x*100)-1] = np.array([x, -x, x*2])
+blender = blenderManager(60)
+blender.start()
+blender.forward()
+blender.set_speed(100)
+time.sleep(5)
+blender.stop()
+time.sleep(2)
+blender.backward()
+time.sleep(13)
+blender.set_speed(50)
+blender.forward()
+time.sleep(10)
+blender.set_speed(20)
+blender.join()
 
-vehicule.mouvementLocal(position)
-
-
-if scene is None:
-    fig, ax = plt.subplots()
-    vehicule.show(fig, ax)
-
-    for obj in objlist:
-        obj.show(fig, ax)
-
-    plt.show()
+print("fini")
