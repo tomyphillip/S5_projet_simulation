@@ -8,13 +8,16 @@ from threading import Thread
 class bille2D():
     deltaH = -0.0015
 
+    x = 0
+    z = -0.0014999
+
     #constantes
     angle = np.radians(-4.3)
     g = -9.81
     m = 0.1 #estimé
     rayon = 0.02
     friction = 0.06
-
+    zLimit = 0.0
     #pour le thread
     vitesseBille = 0
     deltaHFinal = deltaH
@@ -37,9 +40,9 @@ class bille2D():
     def calculeVitesse(self, deltah):
         vitesse = ((self.g*2*deltah*(1-self.friction))**0.5)
         
-        if(vitesse < 0.08):
+        if(vitesse < 0.05):
             vitesse = 0
-        print(f"{vitesse=}")
+        
         return vitesse
 
     #retourne la vitesse maximal du véhicule pour préserver la bille.
@@ -50,62 +53,97 @@ class bille2D():
     #met à jour les paramètres d'accélération de la bille
     def appliqueAcceleration(self, vitesseVehicule, z):
         #retourne la vitesse de la bille selon le support du véhicule (C'est à dire un point fixe)
+        self.z = z
+        self.first = True
         self.vitesseBille = -vitesseVehicule
         #calcul du nouveau deltaH
         #step1: Calculer l'énergie cinétique de la bille
         #step2: Calculer l'élévation maximale que la bille aura
         self.deltaHFinal = self.nouveauDeltah(self.vitesseBille)
-        self.directionX = 1
+        self.zLimit = self.deltaH - self.deltaHFinal
+        self.directionX = -1
 
-        if((self.deltaHFinal + z) > 0):
+        if(self.vitesseBille > 0):
+            self.angle = -self.angle
+            self.directionX = -self.directionX
+
+        self.xLimit = -self.deltaHFinal/np.sin(self.angle)
+
+
+        if((self.deltaHFinal + self.z) > 0):
             print("Bille pu dans le moule")
 
-    def corrigeErreur(self, x, z, hauteurMax, directionX, position):
-        if(z > hauteurMax):
-            position[2] = hauteurMax
-            z = hauteurMax
+    def limitX(self, lim, position, offset):
+        positionFinal = position + offset
+
+        if(lim < 0):
+            if(lim > positionFinal):
+                return lim-position
+        elif(lim > 0):
+            if(lim < positionFinal):
+                return lim-position
         else:
-            position[2] = self.deltaH
-            z = self.deltaH
-            if(self.xRegister):
-                position[0] = 0.0
-                x = 0.0
+            if(offset < 0):
+                if(lim > positionFinal):
+                    return lim-position
             else:
-                position[1] = 0.0
-                x = 0.0
-        return x, z
+                if(lim < positionFinal):
+                    return lim-position
+        return offset
+
+    def limitZ(self, lim, position, offset):
+        positionFinal = position + offset
+        if(lim != self.deltaH):
+            if(lim < positionFinal):
+                return lim-position
+        else:
+            if(lim > positionFinal):
+                return lim-position
+        return offset
+
 
     #Met à jour la position de la bille en fonction de la vitesse du véhicule
-    def updatePosition(self,x, z, position):
+    def updatePosition(self,x, z):
         #position en Z de la bille
         #à l'extrémité, la bille doit se retourner dans l'autre sense.
         #self.vitesseBille = self.calculeVitesse()  #calcul la vitesse actuel
-        deltaX = 0
-        deltaZ = 0
+        if(self.vitesseBille == 0):
+            return np.array([0,0,0])
+
         hauteurMax = self.deltaH-self.deltaHFinal
-        if(z >= hauteurMax or z <= self.deltaH):
-            x, z = self.corrigeErreur(x, z, hauteurMax, self.directionX, position)
-            if(z <= self.deltaH):
+        if((self.z >= hauteurMax or self.z <= self.deltaH) and self.first == False):
+            if(self.z <= self.deltaH):
                 self.deltaHFinal =self.nouveauDeltah(self.vitesseBille)
                 hauteurMax = self.deltaH-self.deltaHFinal
-
-            #si self.z > deltaH, changer la direction en X
-            if(z>=hauteurMax):
-                self.directionX = -self.directionX
 
             #recalcule la vitesse en fonction de la hauteur maximale
             vitesse = self.calculeVitesse(self.deltaHFinal)
             #si vitesse était positive, devient négative
             if(self.vitesseBille > 0):
                 self.vitesseBille = vitesse
-                self.angle = self.angle
+                self.angle = -self.angle
             else:
                 self.vitesseBille = -vitesse
                 self.angle = -self.angle
+
+            #si self.z > deltaH, changer la direction en X
+            self.zLimit = hauteurMax
+            self.xLimit = (self.deltaHFinal/np.sin(self.angle))
+            if(self.z>=hauteurMax):
+                self.directionX = -self.directionX
+                self.xLimit = 0.0
+                self.zLimit = self.deltaH
+                
+            
+
+            
         
+        self.first = False # patch pour éviter un cas particulier
         viteseParFrame = self.vitesseBille/self.framerate
-        deltaX = self.directionX * viteseParFrame * np.cos(self.angle)
-        deltaZ = viteseParFrame * np.sin(self.angle)
+        deltaX = self.limitX(self.xLimit, self.x, self.directionX * viteseParFrame * np.cos(self.angle))
+        deltaZ = self.limitZ(self.zLimit, self.z, viteseParFrame * np.sin(self.angle))
+        self.x += deltaX
+        self.z += deltaZ
         #step3: Valider que la bille est toujours dans le moule
         
         #step4: Calculer les keyframes de la bille
@@ -118,16 +156,18 @@ class BilleMath():
     billeYZ = bille2D(False, True, True, 100)
     vitesseAngulaire = 0
 
-    def appliqueAcceleration(self, X_vitesse, Y_vitesse):
-        self.billeXZ.appliqueAcceleration(X_vitesse, self.position[2])
-        self.billeYZ.appliqueAcceleration(Y_vitesse, self.position[2])
+    def appliqueAcceleration(self, X_vitesse=None, Y_vitesse=None):
+        if(X_vitesse is not None):
+            self.billeXZ.appliqueAcceleration(X_vitesse, self.position[2])
+        if(Y_vitesse is not None):
+            self.billeYZ.appliqueAcceleration(Y_vitesse, self.position[2])
     
     def appliqueRotation(self, vitesseAngulaire):
         raise Exception("à voir si pertinant")
 
     def updatePosition(self):
-        offset1 = self.billeXZ.updatePosition(self.position[0], self.position[2], self.position)
-        offset2 = self.billeYZ.updatePosition(self.position[1], self.position[2], self.position)
+        offset1 = self.billeXZ.updatePosition(self.position[0], self.position[2])
+        offset2 = self.billeYZ.updatePosition(self.position[1], self.position[2])
         self.position = self.position+offset1+offset2
         return self.position
 
@@ -143,9 +183,10 @@ def test():
     print(f"temps de montée = {0.0015/(vmax*np.sin(np.radians(4.7)))}")
     print(f"vitesse horizontal = {(vmax*np.cos(np.radians(4.7)))}")
     print(f"tempps de hor = {0.02/(vmax*np.cos(np.radians(4.7)))}")
+    print(f"{vmax=}")
 
     bille = BilleMath()
-    bille.appliqueAcceleration(vmax*0.7, vmax*0.7)
+    bille.appliqueAcceleration(-0.15, -0.15)
     position = []
     for i in range(100*10):
         position.append(bille.updatePosition())
@@ -165,4 +206,4 @@ def test():
     #print(f"Vitesse en y = {vitesse[1]}")
     #print(f"norme = {np.sqrt(vitesse[0]**2 + vitesse[1]**2)}")
 
-#test() #pour afficher les graphiques, parcontre ça marche pas avec blender donc commenter
+test() #pour afficher les graphiques, parcontre ça marche pas avec blender donc commenter
