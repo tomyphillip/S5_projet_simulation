@@ -8,6 +8,181 @@ import time
 from pathlib import Path
 from threading import Thread
 
+
+#### Pour la simulation de la bille ####
+
+class bille2D():
+    deltaH = -0.0015
+
+    x = 0
+    z = -0.0014999
+
+    #constantes
+    angle = np.radians(-4.3)
+    g = -9.81
+    m = 0.1 #estimé
+    rayon = 0.02
+    friction = 0.06
+    zLimit = 0.0
+    #pour le thread
+    vitesseBille = 0
+    deltaHFinal = deltaH
+    end = False
+
+    def __init__(self, x, y, z, framerate):
+        self.framerate = framerate
+        if(x and y and z):
+            raise Exception("Juste 2 dimensions à True")
+
+        self.xRegister = x
+        self.yRegister = y
+        self.zRegister = z
+
+    def nouveauDeltah(self, vitesse):
+        deltah = ((vitesse**2)/(2*self.g))
+        return deltah
+
+    def calculeVitesse(self, deltah):
+        vitesse = ((self.g*2*deltah*(1-self.friction))**0.5)
+        
+        if(vitesse < 0.05):
+            vitesse = 0
+        
+        return vitesse
+
+    #retourne la vitesse maximal du véhicule pour préserver la bille.
+    def calculVitesseMax(self):
+        vMax = np.sqrt((2*self.g*self.m*-0.0015)/(0.97*self.m)) 
+        return vMax
+
+    #met à jour les paramètres d'accélération de la bille
+    def appliqueAcceleration(self, vitesseVehicule, z):
+        #retourne la vitesse de la bille selon le support du véhicule (C'est à dire un point fixe)
+        self.z = z
+        self.first = True
+        self.vitesseBille = -vitesseVehicule
+        #calcul du nouveau deltaH
+        #step1: Calculer l'énergie cinétique de la bille
+        #step2: Calculer l'élévation maximale que la bille aura
+        self.deltaHFinal = self.nouveauDeltah(self.vitesseBille)
+        self.zLimit = self.deltaH - self.deltaHFinal
+        self.directionX = -1
+
+        if(self.vitesseBille > 0):
+            self.angle = -self.angle
+            self.directionX = -self.directionX
+
+        self.xLimit = -self.deltaHFinal/np.sin(self.angle)
+
+
+        if((self.deltaHFinal + self.z) > 0):
+            print("Bille pu dans le moule")
+
+    def limitX(self, lim, position, offset):
+        positionFinal = position + offset
+
+        if(lim < 0):
+            if(lim > positionFinal):
+                return lim-position
+        elif(lim > 0):
+            if(lim < positionFinal):
+                return lim-position
+        else:
+            if(offset < 0):
+                if(lim > positionFinal):
+                    return lim-position
+            else:
+                if(lim < positionFinal):
+                    return lim-position
+        return offset
+
+    def limitZ(self, lim, position, offset):
+        positionFinal = position + offset
+        if(lim != self.deltaH):
+            if(lim < positionFinal):
+                return lim-position
+        else:
+            if(lim > positionFinal):
+                return lim-position
+        return offset
+
+
+    #Met à jour la position de la bille en fonction de la vitesse du véhicule
+    def updatePosition(self):
+        #position en Z de la bille
+        #à l'extrémité, la bille doit se retourner dans l'autre sense.
+        #self.vitesseBille = self.calculeVitesse()  #calcul la vitesse actuel
+        if(self.vitesseBille == 0):
+            return np.array([0,0,0])
+
+        hauteurMax = self.deltaH-self.deltaHFinal
+        if((self.z >= hauteurMax or self.z <= self.deltaH) and self.first == False):
+            if(self.z <= self.deltaH):
+                self.deltaHFinal =self.nouveauDeltah(self.vitesseBille)
+                hauteurMax = self.deltaH-self.deltaHFinal
+
+            #recalcule la vitesse en fonction de la hauteur maximale
+            vitesse = self.calculeVitesse(self.deltaHFinal)
+            #si vitesse était positive, devient négative
+            if(self.vitesseBille > 0):
+                self.vitesseBille = vitesse
+                self.angle = -self.angle
+            else:
+                self.vitesseBille = -vitesse
+                self.angle = -self.angle
+
+            #si self.z > deltaH, changer la direction en X
+            self.zLimit = hauteurMax
+            self.xLimit = (self.deltaHFinal/np.sin(self.angle))
+            if(self.z>=hauteurMax):
+                self.directionX = -self.directionX
+                self.xLimit = 0.0
+                self.zLimit = self.deltaH
+                
+            
+
+            
+        
+        self.first = False # patch pour éviter un cas particulier
+        viteseParFrame = self.vitesseBille/self.framerate
+        deltaX = self.limitX(self.xLimit, self.x, self.directionX * viteseParFrame * np.cos(self.angle))
+        deltaZ = self.limitZ(self.zLimit, self.z, viteseParFrame * np.sin(self.angle))
+        self.x += deltaX
+        self.z += deltaZ
+        #step3: Valider que la bille est toujours dans le moule
+        
+        #step4: Calculer les keyframes de la bille
+        return np.array([deltaX if self.xRegister else 0, deltaX if self.yRegister else 0, deltaZ if self.zRegister else 0])
+    
+
+class BilleMath():
+    position = np.array([0, 0, -0.0015])
+    vitesseAngulaire = 0
+
+    def __init__(self, framerate):
+        self.billeXZ = bille2D(True, False, True, framerate)
+        self.billeYZ = bille2D(False, True, True, framerate)
+
+
+    def appliqueAcceleration(self, X_vitesse=None, Y_vitesse=None):
+        if(X_vitesse is not None):
+            self.billeXZ.appliqueAcceleration(X_vitesse, self.position[2])
+        if(Y_vitesse is not None):
+            self.billeYZ.appliqueAcceleration(Y_vitesse, self.position[2])
+    
+    def appliqueRotation(self, vitesseAngulaire):
+        raise Exception("à voir si pertinant")
+
+    def updatePosition(self):
+        offset1 = self.billeXZ.updatePosition()
+        offset2 = self.billeYZ.updatePosition()
+        self.position = self.position+offset1+offset2
+        return self.position
+
+
+
+#### Tout ce qui a trait à blender ####
+
 class blenderObject():
     scale = 1
     radius = 2
@@ -42,7 +217,13 @@ class blenderObject():
             self.blenderObj.location = tuple(self.position/self.scale)
             self.blenderObj.keyframe_insert(data_path="location", index=-1)
             self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
-            
+    
+    def ajouteOffset(self, offset):
+        if self.scene is not None:
+            position = self.position + offset
+            self.blenderObj.location = tuple(position/self.scale)
+            self.blenderObj.keyframe_insert(data_path="location", index=-1)
+            self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
 
     def show(self, fig, ax):
         ax.plot(self.position[0], self.position[1], "xr")
@@ -52,7 +233,7 @@ class blenderObject():
 class vehicule(blenderObject):
     def __init__(self, x,y,z,scene):
         super().__init__(x,y,z, "vehicule", scene)
-        self.bille = bille(x, y-0.08, z+0.015, scene)
+        self.bille = bille(x, y-0.08, z+0.020, scene)
         self.sonar = sonar(x, y-0.14, z, None)
         self.suiveurligne = suiveurligne(x+0.5, y, z, None)
         #ajout du sonar à l'avant
@@ -68,18 +249,25 @@ class vehicule(blenderObject):
         
 
 class bille(blenderObject):
+
     def __init__(self, x, y, z, scene):
         super().__init__(x, y, z, "bille", scene)
+        self._vielleVitesse = np.array([0,0])
+        self.billeMath = BilleMath(scene.render.fps)
         #qu'est-ce qu'on a besoin de savoir? Accélération en x et y? angle en z? faire le z ou pas?
 
     def bougeBille(self, deltaPosition):
-        #offset x à calculer avec la formule d'inertie de la bille
-        offset_x = 0
-        #offset y
-        offset_y = 0
+        #vérifier si la vitesse à changer:
+        vitesseCourante = deltaPosition
+        if(vitesseCourante[0] != self._vielleVitesse[0]):
+            self.billeMath.appliqueAcceleration(X_vitesse=vitesseCourante[0]*self.scene.render.fps)
 
-        positionBille = np.array([deltaPosition[0]+offset_x, deltaPosition[1]+offset_y, deltaPosition[2]])
-        self.mouvementLocal(positionBille)
+        if(vitesseCourante[1] != self._vielleVitesse[1]):
+            self.billeMath.appliqueAcceleration(Y_vitesse=vitesseCourante[1]*self.scene.render.fps)
+        
+        positionBille = self.billeMath.updatePosition()
+        self.mouvementLocal(deltaPosition)
+        self.ajouteOffset(positionBille)
 
 class suiveurligne(blenderObject):
     def __init__(self, x, y, z, scene):
@@ -227,19 +415,10 @@ class blenderManager(Thread):
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
 
-blender = blenderManager(60)
+blender = blenderManager(10)
 blender.start()
 blender.forward()
-blender.set_speed(100)
-time.sleep(5)
-blender.stop()
-time.sleep(2)
-blender.backward()
-time.sleep(13)
-blender.set_speed(50)
-blender.forward()
-time.sleep(10)
 blender.set_speed(20)
+time.sleep(10)
 blender.join()
-
 print("fini")
