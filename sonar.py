@@ -9,8 +9,10 @@ from pathlib import Path
 from threading import Thread
 
 import sys
+#sinon il trouvera pas les modules custom si on change pas son path d'import
 sys.path.insert(0, r"C:\Users\alexandre.bergeron\OneDrive - USherbrooke\university\projet\S5_projet_simulation")
 from bille import BilleMath
+import creationLigne
 
 
 #### Tout ce qui a trait à blender ####
@@ -19,6 +21,7 @@ class blenderObject():
     scale = 1
     radius = 2
     name = "undefined" #name of the blender object
+    name_2 = ""
     frameNb = 0
     framerate = 100 #besoin de savoir ça?
 
@@ -28,11 +31,14 @@ class blenderObject():
         self.name = name
         self.scene = scene
         if scene is not None:
-            if not self.name in bpy.data.objects:
-                path = Path(os.getcwd()) / "blender" / f"{self.name}.dae"
-                bpy.ops.wm.collada_import(filepath=str(path), import_units=False, keep_bind_info=False)
+            i = 1
+            while(self.name + self.name_2 in bpy.data.objects):
+                self.name_2 = "." + str(i).zfill(3)
+                i += 1
             
-            self.blenderObj = bpy.data.objects[self.name]
+            path = Path(os.getcwd()) / "blender" / f"{self.name}.dae"
+            bpy.ops.wm.collada_import(filepath=str(path), import_units=False, keep_bind_info=False)
+            self.blenderObj = bpy.data.objects[self.name+self.name_2]
             self.blenderObj.animation_data_clear()
         
             #place l'objet à son point de départ
@@ -66,14 +72,14 @@ class vehicule(blenderObject):
     def __init__(self, x,y,z,scene):
         super().__init__(x,y,z, "vehicule", scene)
         self.bille = bille(x, y-0.08, z+0.020, scene)
-        self.sonar = sonar(x, y-0.14, z, None)
-        self.suiveurligne = suiveurligne(x+0.5, y, z, None)
+        self.sonar = sonar(x, y-0.14, z+0.05, scene)
+        self.suiveurligne = CapteurLigne(x, y-0.14, z, scene)
         #ajout du sonar à l'avant
     
     def mouvementLocal(self, deltaPosition):
         super().mouvementLocal(deltaPosition)
-        self.suiveurligne.mouvementLocal(deltaPosition)
         self.sonar.mouvementLocal(deltaPosition)
+        self.suiveurligne.mouvementLocal(deltaPosition)
 
         #déterminer accélération x et y pis shooter ça à bille
         #je pense que deltaposition serait une accélération en fait
@@ -101,52 +107,54 @@ class bille(blenderObject):
         self.mouvementLocal(deltaPosition)
         self.ajouteOffset(positionBille)
 
-class suiveurligne(blenderObject):
+class DetecteurLigne(blenderObject):
+
     def __init__(self, x, y, z, scene):
         super().__init__(x, y, z, "undefined", scene)
 
+    def configureLigne(self, ligne):
+        self.ligne = ligne 
+
+    def detection(self):
+        return self.ligne.estDansLigne(self.position)
+
+#représente le module avec les 5 détecteurs
+class CapteurLigne(blenderObject):
+    def __init__(self, x, y, z, scene):
+        super().__init__(x, y, z, "undefined", scene)
+        self.detecteurs = []
+        self.detecteurs.append(DetecteurLigne(x-0.08, y, z, scene))
+        self.detecteurs.append(DetecteurLigne(x-0.04, y, z, scene))
+        self.detecteurs.append(DetecteurLigne(x, y, z, scene))
+        self.detecteurs.append(DetecteurLigne(x+0.04, y, z, scene))
+        self.detecteurs.append(DetecteurLigne(x+0.08, y, z, scene))
+    
+    def mouvementLocal(self, deltaPosition):
+        super().mouvementLocal(deltaPosition)
+        for detecteur in self.detecteurs:
+            detecteur.mouvementLocal(deltaPosition)
+
+    def detection(self):
+        resultat = []
+        for detecteur in self.detecteurs:
+            resultat.append(detecteur.detection())
+        return resultat
+
+    def configureLigne(self, ligne):
+        resultat = []
+        for detecteur in self.detecteurs:
+            detecteur.configureLigne(ligne)
+
+
 class sonar(blenderObject): 
     def __init__(self, x, y, z, scene):
-        self.scale = 100
         super().__init__(x,y,z, "undefined", scene)
         self.max_range = 4.5*self.scale #mètre
         self.angle = 30 # angle en degrées
         self.precision = 0.01*self.scale
 
-        #vision du sonar
-        largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2))
-        milieu = np.int16((largeur)/2)+np.int16(0.04*self.scale) #le +0.04 pour être au milieu
-        longueur = np.int16(self.max_range)
-
-        self.onde = np.zeros((largeur, longueur))
-
-        for angle_actuel in range(int(-self.angle/2), int(self.angle/2)):
-            angleRad = np.radians(angle_actuel)
-            nombre_de_step = np.int16(self.max_range/self.precision)
-            for step in np.linspace(0, longueur-1, nombre_de_step, dtype=np.int16):
-                step_x = np.int16(np.sin(angleRad)*step) + milieu
-                step_y = np.int16(np.cos(angleRad)*step)
-                self.onde[step_x][step_y] = 1
-
-
-    def collisionBound(self, position1, position2):
-        return np.abs(position1-position2) < self.radius
-
     def Check(self, blenderObjectList):
-        for obj in blenderObjectList:
-            for index, value in np.ndenumerate(self.onde):
-                position_obj = obj.position[1]
-                position_sonar = index[0]+self.position[1]
-                if(self.collisionBound(position_obj, position_sonar) == True):
-                    #vérification du y
-                    position_obj = obj.position[0]
-                    position_sonar = index[1]+self.position[0]
-                    if(self.collisionBound(position_obj, position_sonar) == True):
-                        #sleep pour simuler le temps réel
-                        length = (index[0]**2 + index[1]**2)**0.5 #pythagore
-                        C = 333.34 #m/s
-                        time.sleep(2*(length/self.scale)/C)
-                        return length/self.scale
+        raise Exception("Sonar pas implémenté")
         return -1 #dans la librairie, -1 est retourné s'il y a rien        
 
     def show(self, fig, ax):
@@ -174,18 +182,26 @@ class blenderManager(Thread):
 
 
     #l'argument secondes est la durée de la simulation
-    def __init__(self, secondes):
+    def __init__(self, secondes, nomDeLigne):
         super().__init__()
         self._tempsDeSimulation = secondes
         #delete tout les trucs
         bpy.ops.object.select_all(action='SELECT')
-        bpy.ops.object.delete(use_global=False, confirm=False)
+        bpy.ops.object.delete(use_global=True, confirm=False)
         #load blender scene
         scene = bpy.context.scene
         if scene is not None:
             scene.render.fps = self.framerate
         self.vehicule = vehicule(0, 0, 0, scene)
         bpy.context.scene.frame_end = int(secondes*self.framerate)
+
+        #crée la ligne
+        ligne = creationLigne.Ligne(nomDeLigne, getattr(creationLigne, nomDeLigne), 4)
+        self.vehicule.suiveurligne.configureLigne(ligne)
+
+
+    def read_digital(self):
+        return self.vehicule.suiveurligne.detection()
 
 
     def run(self):
@@ -247,10 +263,12 @@ class blenderManager(Thread):
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
 
-blender = blenderManager(10)
+blender = blenderManager(10, "crochet")
 blender.start()
 blender.forward()
 blender.set_speed(20)
-time.sleep(10)
+for i in range(10):
+    print(blender.read_digital())
+    time.sleep(1)
 blender.join()
 print("fini")
