@@ -57,7 +57,7 @@ class Ligne():
                 
         return 0
 
-def droite(x):
+def crochet(x):
     y = 0
     if(x <= 2):
         y = 0
@@ -72,12 +72,12 @@ def test(x, y, ligne):
 ligne = Ligne("test", droite, 0.01)
 
 
-test(0.005, 0.005, ligne)
-test(0.01, 0.01, ligne)
-test(-0.005, 0.005, ligne)
-test(0.005, -0.005, ligne)
-test(0.0, 0.0, ligne)
-test(0.011, 0.011, ligne)
-test(0.003, 0.005, ligne)
-test(0.012, 0.005, ligne)
-test(0.012, 0.012, ligne)
+test(0.005, 0.005, crochet)
+test(0.01, 0.01, crochet)
+test(-0.005, 0.005, crochet)
+test(0.005, -0.005, crochet)
+test(0.0, 0.0, crochet)
+test(0.011, 0.011, crochet)
+test(0.003, 0.005, crochet)
+test(0.012, 0.005, crochet)
+test(0.012, 0.012, crochet)
