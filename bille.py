@@ -34,7 +34,6 @@ class bille2D():
 
     def nouveauDeltah(self, vitesse):
         deltah = ((vitesse**2)/(2*self.g))
-        print(f"{deltah=}")
         return deltah
 
     def calculeVitesse(self, deltah):
@@ -61,7 +60,7 @@ class bille2D():
         #step2: Calculer l'élévation maximale que la bille aura
         self.deltaHFinal = self.nouveauDeltah(self.vitesseBille)
         self.zLimit = self.deltaH - self.deltaHFinal
-        self.directionX = -1
+        self.directionX = 1
 
         if(self.vitesseBille > 0):
             self.angle = -self.angle
@@ -103,7 +102,7 @@ class bille2D():
 
 
     #Met à jour la position de la bille en fonction de la vitesse du véhicule
-    def updatePosition(self,x, z):
+    def updatePosition(self):
         #position en Z de la bille
         #à l'extrémité, la bille doit se retourner dans l'autre sense.
         #self.vitesseBille = self.calculeVitesse()  #calcul la vitesse actuel
@@ -152,9 +151,11 @@ class bille2D():
 
 class BilleMath():
     position = np.array([0, 0, -0.0015])
-    billeXZ = bille2D(True, False, True, 100)
-    billeYZ = bille2D(False, True, True, 100)
     vitesseAngulaire = 0
+
+    def __init__(self, framerate):
+        self.billeXZ = bille2D(True, False, True, framerate)
+        self.billeYZ = bille2D(False, True, True, framerate)
 
     def appliqueAcceleration(self, X_vitesse=None, Y_vitesse=None):
         if(X_vitesse is not None):
@@ -166,8 +167,8 @@ class BilleMath():
         raise Exception("à voir si pertinant")
 
     def updatePosition(self):
-        offset1 = self.billeXZ.updatePosition(self.position[0], self.position[2])
-        offset2 = self.billeYZ.updatePosition(self.position[1], self.position[2])
+        offset1 = self.billeXZ.updatePosition()
+        offset2 = self.billeYZ.updatePosition()
         self.position = self.position+offset1+offset2
         return self.position
 
@@ -179,14 +180,13 @@ def test():
     vmax = np.sqrt(2*-9.81*-0.0015)
 
     #test
-    print(f"vitesse vertical = {vmax*np.sin(np.radians(4.7))}")
-    print(f"temps de montée = {0.0015/(vmax*np.sin(np.radians(4.7)))}")
-    print(f"vitesse horizontal = {(vmax*np.cos(np.radians(4.7)))}")
-    print(f"tempps de hor = {0.02/(vmax*np.cos(np.radians(4.7)))}")
-    print(f"{vmax=}")
+    #print(f"vitesse vertical = {vmax*np.sin(np.radians(4.7))}")
+    #print(f"temps de montée = {0.0015/(vmax*np.sin(np.radians(4.7)))}")
+    #print(f"vitesse horizontal = {(vmax*np.cos(np.radians(4.7)))}")
+    #print(f"tempps de hor = {0.02/(vmax*np.cos(np.radians(4.7)))}")
 
-    bille = BilleMath()
-    bille.appliqueAcceleration(-0.15, -0.15)
+    bille = BilleMath(100)
+    bille.appliqueAcceleration(0, 0.20)
     position = []
     for i in range(100*10):
         position.append(bille.updatePosition())

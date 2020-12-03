@@ -8,6 +8,13 @@ import time
 from pathlib import Path
 from threading import Thread
 
+import sys
+sys.path.insert(0, r"C:\Users\alexandre.bergeron\OneDrive - USherbrooke\university\projet\S5_projet_simulation")
+from bille import BilleMath
+
+
+#### Tout ce qui a trait à blender ####
+
 class blenderObject():
     scale = 1
     radius = 2
@@ -42,7 +49,13 @@ class blenderObject():
             self.blenderObj.location = tuple(self.position/self.scale)
             self.blenderObj.keyframe_insert(data_path="location", index=-1)
             self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
-            
+    
+    def ajouteOffset(self, offset):
+        if self.scene is not None:
+            position = self.position + offset
+            self.blenderObj.location = tuple(position/self.scale)
+            self.blenderObj.keyframe_insert(data_path="location", index=-1)
+            self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
 
     def show(self, fig, ax):
         ax.plot(self.position[0], self.position[1], "xr")
@@ -52,7 +65,7 @@ class blenderObject():
 class vehicule(blenderObject):
     def __init__(self, x,y,z,scene):
         super().__init__(x,y,z, "vehicule", scene)
-        self.bille = bille(x, y-0.08, z+0.015, scene)
+        self.bille = bille(x, y-0.08, z+0.020, scene)
         self.sonar = sonar(x, y-0.14, z, None)
         self.suiveurligne = suiveurligne(x+0.5, y, z, None)
         #ajout du sonar à l'avant
@@ -68,18 +81,25 @@ class vehicule(blenderObject):
         
 
 class bille(blenderObject):
+
     def __init__(self, x, y, z, scene):
         super().__init__(x, y, z, "bille", scene)
+        self._vielleVitesse = np.array([0,0])
+        self.billeMath = BilleMath(scene.render.fps)
         #qu'est-ce qu'on a besoin de savoir? Accélération en x et y? angle en z? faire le z ou pas?
 
     def bougeBille(self, deltaPosition):
-        #offset x à calculer avec la formule d'inertie de la bille
-        offset_x = 0
-        #offset y
-        offset_y = 0
+        #vérifier si la vitesse à changer:
+        vitesseCourante = deltaPosition
+        if(vitesseCourante[0] != self._vielleVitesse[0]):
+            self.billeMath.appliqueAcceleration(X_vitesse=vitesseCourante[0]*self.scene.render.fps)
 
-        positionBille = np.array([deltaPosition[0]+offset_x, deltaPosition[1]+offset_y, deltaPosition[2]])
-        self.mouvementLocal(positionBille)
+        if(vitesseCourante[1] != self._vielleVitesse[1]):
+            self.billeMath.appliqueAcceleration(Y_vitesse=vitesseCourante[1]*self.scene.render.fps)
+        
+        positionBille = self.billeMath.updatePosition()
+        self.mouvementLocal(deltaPosition)
+        self.ajouteOffset(positionBille)
 
 class suiveurligne(blenderObject):
     def __init__(self, x, y, z, scene):
@@ -227,19 +247,10 @@ class blenderManager(Thread):
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
 
-blender = blenderManager(60)
+blender = blenderManager(10)
 blender.start()
 blender.forward()
-blender.set_speed(100)
-time.sleep(5)
-blender.stop()
-time.sleep(2)
-blender.backward()
-time.sleep(13)
-blender.set_speed(50)
-blender.forward()
-time.sleep(10)
 blender.set_speed(20)
+time.sleep(10)
 blender.join()
-
 print("fini")
