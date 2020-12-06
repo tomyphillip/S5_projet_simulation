@@ -1,27 +1,19 @@
 import numpy as np
-import matplotlib.image as mpimg
-import matplotlib.pyplot as plt
+#import matplotlib.image as mpimg
+#import matplotlib.pyplot as plt
 import time
 import bpy
 import os
 import time
 from pathlib import Path
 from threading import Thread
-
-import sys
-#sinon il trouvera pas les modules custom si on change pas son path d'import
-sys.path.insert(0, r"C:\Users\alexandre.bergeron\OneDrive - USherbrooke\university\projet\S5_projet_simulation")
-from bille import BilleMath
-import creationLigne
-
-
-#### Tout ce qui a trait à blender ####
+import math
+from mathutils import Matrix
 
 class blenderObject():
     scale = 1
     radius = 2
     name = "undefined" #name of the blender object
-    name_2 = ""
     frameNb = 0
     framerate = 100 #besoin de savoir ça?
 
@@ -31,14 +23,11 @@ class blenderObject():
         self.name = name
         self.scene = scene
         if scene is not None:
-            i = 1
-            while(self.name + self.name_2 in bpy.data.objects):
-                self.name_2 = "." + str(i).zfill(3)
-                i += 1
+            if not self.name in bpy.data.objects:
+                path = Path(os.getcwd()) / "blender" / f"{self.name}.dae"
+                bpy.ops.wm.collada_import(filepath=str(path), import_units=False, keep_bind_info=False)
             
-            path = Path(os.getcwd()) / "blender" / f"{self.name}.dae"
-            bpy.ops.wm.collada_import(filepath=str(path), import_units=False, keep_bind_info=False)
-            self.blenderObj = bpy.data.objects[self.name+self.name_2]
+            self.blenderObj = bpy.data.objects[self.name]
             self.blenderObj.animation_data_clear()
         
             #place l'objet à son point de départ
@@ -55,13 +44,6 @@ class blenderObject():
             self.blenderObj.location = tuple(self.position/self.scale)
             self.blenderObj.keyframe_insert(data_path="location", index=-1)
             self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
-    
-    def ajouteOffset(self, offset):
-        if self.scene is not None:
-            position = self.position + offset
-            self.blenderObj.location = tuple(position/self.scale)
-            self.blenderObj.keyframe_insert(data_path="location", index=-1)
-            self.blenderObj.animation_data.action.fcurves[-1].keyframe_points[-1].interpolation = 'LINEAR'
 
     def show(self, fig, ax):
         ax.plot(self.position[0], self.position[1], "xr")
@@ -71,15 +53,15 @@ class blenderObject():
 class vehicule(blenderObject):
     def __init__(self, x,y,z,scene):
         super().__init__(x,y,z, "vehicule", scene)
-        self.bille = bille(x, y-0.08, z+0.020, scene)
-        self.sonar = sonar(x, y-0.14, z+0.05, scene)
-        self.suiveurligne = CapteurLigne(x, y-0.14, z, scene)
+        self.bille = bille(x, y-0.08, z+0.015, scene)
+        self.sonar = sonar(x, y-0.14, z, None)
+        self.suiveurligne = suiveurligne(x+0.5, y, z, None)
         #ajout du sonar à l'avant
     
     def mouvementLocal(self, deltaPosition):
         super().mouvementLocal(deltaPosition)
-        self.sonar.mouvementLocal(deltaPosition)
         self.suiveurligne.mouvementLocal(deltaPosition)
+        self.sonar.mouvementLocal(deltaPosition)
 
         #déterminer accélération x et y pis shooter ça à bille
         #je pense que deltaposition serait une accélération en fait
@@ -87,74 +69,65 @@ class vehicule(blenderObject):
         
 
 class bille(blenderObject):
-
     def __init__(self, x, y, z, scene):
         super().__init__(x, y, z, "bille", scene)
-        self._vielleVitesse = np.array([0,0])
-        self.billeMath = BilleMath(scene.render.fps)
         #qu'est-ce qu'on a besoin de savoir? Accélération en x et y? angle en z? faire le z ou pas?
 
     def bougeBille(self, deltaPosition):
-        #vérifier si la vitesse à changer:
-        vitesseCourante = deltaPosition
-        if(vitesseCourante[0] != self._vielleVitesse[0]):
-            self.billeMath.appliqueAcceleration(X_vitesse=vitesseCourante[0]*self.scene.render.fps)
+        #offset x à calculer avec la formule d'inertie de la bille
+        offset_x = 0
+        #offset y
+        offset_y = 0
 
-        if(vitesseCourante[1] != self._vielleVitesse[1]):
-            self.billeMath.appliqueAcceleration(Y_vitesse=vitesseCourante[1]*self.scene.render.fps)
-        
-        positionBille = self.billeMath.updatePosition()
-        self.mouvementLocal(deltaPosition)
-        self.ajouteOffset(positionBille)
+        positionBille = np.array([deltaPosition[0]+offset_x, deltaPosition[1]+offset_y, deltaPosition[2]])
+        self.mouvementLocal(positionBille)
 
-class DetecteurLigne(blenderObject):
-
+class suiveurligne(blenderObject):
     def __init__(self, x, y, z, scene):
         super().__init__(x, y, z, "undefined", scene)
-
-    def configureLigne(self, ligne):
-        self.ligne = ligne 
-
-    def detection(self):
-        return self.ligne.estDansLigne(self.position)
-
-#représente le module avec les 5 détecteurs
-class CapteurLigne(blenderObject):
-    def __init__(self, x, y, z, scene):
-        super().__init__(x, y, z, "undefined", scene)
-        self.detecteurs = []
-        self.detecteurs.append(DetecteurLigne(x-0.08, y, z, scene))
-        self.detecteurs.append(DetecteurLigne(x-0.04, y, z, scene))
-        self.detecteurs.append(DetecteurLigne(x, y, z, scene))
-        self.detecteurs.append(DetecteurLigne(x+0.04, y, z, scene))
-        self.detecteurs.append(DetecteurLigne(x+0.08, y, z, scene))
-    
-    def mouvementLocal(self, deltaPosition):
-        super().mouvementLocal(deltaPosition)
-        for detecteur in self.detecteurs:
-            detecteur.mouvementLocal(deltaPosition)
-
-    def detection(self):
-        resultat = []
-        for detecteur in self.detecteurs:
-            resultat.append(detecteur.detection())
-        return resultat
-
-    def configureLigne(self, ligne):
-        resultat = []
-        for detecteur in self.detecteurs:
-            detecteur.configureLigne(ligne)
-
 
 class sonar(blenderObject): 
     def __init__(self, x, y, z, scene):
+        self.scale = 100
         super().__init__(x,y,z, "undefined", scene)
         self.max_range = 4.5*self.scale #mètre
         self.angle = 30 # angle en degrées
         self.precision = 0.01*self.scale
 
+        #vision du sonar
+        largeur = np.int16(round(np.sin(np.radians(self.angle))*self.max_range, 2))
+        milieu = np.int16((largeur)/2)+np.int16(0.04*self.scale) #le +0.04 pour être au milieu
+        longueur = np.int16(self.max_range)
+
+        self.onde = np.zeros((largeur, longueur))
+
+        for angle_actuel in range(int(-self.angle/2), int(self.angle/2)):
+            angleRad = np.radians(angle_actuel)
+            nombre_de_step = np.int16(self.max_range/self.precision)
+            for step in np.linspace(0, longueur-1, nombre_de_step, dtype=np.int16):
+                step_x = np.int16(np.sin(angleRad)*step) + milieu
+                step_y = np.int16(np.cos(angleRad)*step)
+                self.onde[step_x][step_y] = 1
+
+
+    def collisionBound(self, position1, position2):
+        return np.abs(position1-position2) < self.radius
+
     def Check(self, blenderObjectList):
-        raise Exception("Sonar pas implémenté")
+        for obj in blenderObjectList:
+            for index, value in np.ndenumerate(self.onde):
+                position_obj = obj.position[1]
+                position_sonar = index[0]+self.position[1]
+                if(self.collisionBound(position_obj, position_sonar) == True):
+                    #vérification du y
+                    position_obj = obj.position[0]
+                    position_sonar = index[1]+self.position[0]
+                    if(self.collisionBound(position_obj, position_sonar) == True):
+                        #sleep pour simuler le temps réel
+                        length = (index[0]**2 + index[1]**2)**0.5 #pythagore
+                        C = 333.34 #m/s
+                        time.sleep(2*(length/self.scale)/C)
+                        return length/self.scale
         return -1 #dans la librairie, -1 est retourné s'il y a rien        
 
     def show(self, fig, ax):
@@ -182,12 +155,12 @@ class blenderManager(Thread):
 
 
     #l'argument secondes est la durée de la simulation
-    def __init__(self, secondes, nomDeLigne):
+    def __init__(self, secondes):
         super().__init__()
         self._tempsDeSimulation = secondes
         #delete tout les trucs
         bpy.ops.object.select_all(action='SELECT')
-        bpy.ops.object.delete(use_global=True, confirm=False)
+        bpy.ops.object.delete(use_global=False, confirm=False)
         #load blender scene
         scene = bpy.context.scene
         if scene is not None:
@@ -195,23 +168,35 @@ class blenderManager(Thread):
         self.vehicule = vehicule(0, 0, 0, scene)
         bpy.context.scene.frame_end = int(secondes*self.framerate)
 
-        #crée la ligne
-        ligne = creationLigne.Ligne(nomDeLigne, getattr(creationLigne, nomDeLigne), 4)
-        self.vehicule.suiveurligne.configureLigne(ligne)
-
-
-    def read_digital(self):
-        return self.vehicule.suiveurligne.detection()
-
 
     def run(self):
         nombreStepAvantLaFin = self.framerate*self._tempsDeSimulation
         nombreStep = 0
+        startTurn = 0
+        tempsEcoule = time.time()
     
         while(nombreStep < nombreStepAvantLaFin):
             start = time.time()
+            distanceX = 0
             if self._avance:
-                distance = (self._foward_speed)*self._step*self._circonference_roue*self._rpsMax
+                if self._tourne:
+                    if(self._rotationServo > 90):
+                        radius = 0.15/np.sin(180-self._rotationServo) 
+                        omega = ((self._foward_speed)*self._step*self._circonference_roue*self._rpsMax) / radius
+                        degreeSec = np.degrees(omega)
+                        distance = (np.cos(degreeSec*startTurn)) * self._step
+                        distanceX = -(np.sin(degreeSec*startTurn)) * self._step
+                    else:
+                        radius = 0.15/np.sin(self._rotationServo) 
+                        omega = ((self._foward_speed)*self._step*self._circonference_roue*self._rpsMax) / radius
+                        degreeSec = np.degrees(omega)
+                        distance = (np.cos(degreeSec*startTurn)) * self._step
+                        distanceX = np.abs((np.sin(degreeSec*startTurn))) * self._step
+
+                    startTurn += tempsEcoule
+                    print(distance, distanceX)
+                else:
+                    distance = (self._foward_speed)*self._step*self._circonference_roue*self._rpsMax
             elif self._recule:
                 distance = -(self._foward_speed)*self._step*self._circonference_roue*self._rpsMax
             elif self._stop:
@@ -219,10 +204,9 @@ class blenderManager(Thread):
             else:
                 raise Exception("Aucun mode active pour la classe blenderManager")
             
-
-
+            
             #pas de rotation pour le moment à prendre en compte, donc je vais juste mettre la vitesse dans le y
-            position = np.array([0, distance, 0])
+            position = np.array([distanceX, distance, 0])
             self.vehicule.mouvementLocal(position)
 
             nombreStep += 1
@@ -236,39 +220,57 @@ class blenderManager(Thread):
 
             #maintenant qu'on a la distance, le convertir en x, y et z
 
-
-
     def forward(self):
         self._avance = True
         self._stop = False
         self._recule = False
+        self._tourne = False
     
     def backward(self):
         self._avance = False
         self._stop = False
         self._recule = True
+        self._tourne = False
 
     def stop(self):
         self._avance = False
         self._stop = True
         self._recule = False
+        self._tourne = False
+
+    def turnForward(self):
+        self._avance = True
+        self._stop = False
+        self._recule = False
+        self._tourne = True
 
     #vitesse de 0 à 100
     def set_speed(self, speed):
         if(speed < 0 or speed > 100):
             raise Exception(f"Vitesse invalide dans set_speed({speed})")
         self._foward_speed = speed/100
+    
+    #angle de 45 à 135
+    def turn(self, angle):
+        if(angle < 45 or angle > 135):
+            raise Exception(f"Angle invalide dans turn({angle})")
+        self._rotationServo = angle
 
 
 #L = capteur_sonar.Check(objlist)
 #print(f"obstacle detecte a {L}m")
 
-blender = blenderManager(10, "crochet")
+blender = blenderManager(60)
 blender.start()
-blender.forward()
-blender.set_speed(20)
-for i in range(10):
-    print(blender.read_digital())
-    time.sleep(1)
+blender.set_speed(100)
+blender.turnForward()
+blender.turn(45)
+time.sleep(5)
+blender.stop()
+time.sleep(2)
+blender.turnForward()   
+blender.turn(135)
+time.sleep(5)
 blender.join()
+
 print("fini")
